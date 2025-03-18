@@ -16,4 +16,10 @@ RUN mkdir -p /app/output
 ENV PYTHONUNBUFFERED=1
 
 # Command to run the application
+#
+#
+#
+#
+#
+#switch this so that it runs all the files in the src in the correct sequential order
 ENTRYPOINT ["python", "src/dewatering-tool.py"]

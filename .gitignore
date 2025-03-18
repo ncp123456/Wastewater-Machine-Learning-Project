@@ -54,23 +54,19 @@ Thumbs.db
 *
 */*
 
-# But not .py files
-!*.py
-!*/*.py
-
-# And not the requirements.txt
-!requirements.txt
-
-# And not the Dockerfile
-!Dockerfile
-
-# And not .gitignore itself
-!.gitignore
-
 # Don't ignore directories, so we can recurse into them
 !*/
 
-# But still ignore pycache directories
+# Don't ignore Python files
+!*.py
+!*/*.py
+
+# Don't ignore specific config files
+!requirements.txt
+!Dockerfile
+!.gitignore
+
+# Always ignore these regardless of above rules
 __pycache__/
 *.pyc
 *.pyo
