@@ -9,10 +9,10 @@ import os
 
 class TabPFNRegressor:
     """Wrapper for TabPFN to handle regression through classification"""
-    def __init__(self, n_bins=100, device='cpu', N_ensemble_configurations=32):
+    def __init__(self, n_bins=100, device='cpu'):
         self.n_bins = n_bins
         self.discretizer = KBinsDiscretizer(n_bins=n_bins, encode='ordinal', strategy='quantile')
-        self.classifier = TabPFNClassifier(device=device, N_ensemble_configurations=N_ensemble_configurations)
+        self.classifier = TabPFNClassifier(device=device)
         
     def fit(self, X, y):
         """Fit the model by discretizing y into classes"""
@@ -29,11 +29,6 @@ class TabPFNRegressor:
         predictions = self.discretizer.inverse_transform(expected_class.reshape(-1, 1))
         return predictions
 
-def build_tabpfn_model():
-    """Build TabPFN model"""
-    model = TabPFNClassifier(device='cpu', N_ensemble_configurations=32)
-    return model
-
 def train_and_evaluate_tabpfn(data, target_cols):
     """Train and evaluate TabPFN model"""
     print(f"\nTraining TabPFN model for {target_cols}...")
@@ -48,21 +43,39 @@ def train_and_evaluate_tabpfn(data, target_cols):
     X_train = X_train.reshape(X_train.shape[0], -1)
     X_test = X_test.reshape(X_test.shape[0], -1)
     
-    # Convert to classification problem (bin the continuous values)
-    n_bins = 10
-    y_train_binned = np.digitize(y_train, np.linspace(y_train.min(), y_train.max(), n_bins))
-    y_test_binned = np.digitize(y_test, np.linspace(y_test.min(), y_test.max(), n_bins))
+    # Train separate models for each target
+    all_predictions = []
+    all_y_test = []
     
-    # Build and train model
-    model = build_tabpfn_model()
-    model.fit(X_train, y_train_binned)
+    for i, target_col in enumerate(target_cols):
+        print(f"\nTraining for target: {target_col}")
+        
+        # Get single target
+        y_train_single = y_train[:, i]
+        y_test_single = y_test[:, i]
+        
+        # Convert to classification problem (bin the continuous values)
+        n_bins = 10
+        y_train_binned = np.digitize(y_train_single, np.linspace(y_train_single.min(), y_train_single.max(), n_bins))
+        y_test_binned = np.digitize(y_test_single, np.linspace(y_test_single.min(), y_test_single.max(), n_bins))
+        
+        # Build and train model
+        model = TabPFNClassifier(device='cpu')
+        model.fit(X_train, y_train_binned)
+        
+        # Make predictions
+        predictions_binned = model.predict(X_test)
+        
+        # Convert back to continuous values
+        bin_centers = np.linspace(y_test_single.min(), y_test_single.max(), n_bins)
+        predictions = bin_centers[predictions_binned]
+        
+        all_predictions.append(predictions)
+        all_y_test.append(y_test_single)
     
-    # Make predictions
-    predictions_binned = model.predict(X_test)
-    
-    # Convert back to continuous values
-    bin_centers = np.linspace(y_test.min(), y_test.max(), n_bins)
-    predictions = bin_centers[predictions_binned]
+    # Stack predictions and actual values
+    predictions = np.column_stack(all_predictions)
+    y_test = np.column_stack(all_y_test)
     
     # Inverse transform predictions and actual values
     predictions = preprocessor.inverse_scale(predictions)
