@@ -3,7 +3,36 @@ import os
 import numpy as np
 
 # Define what variables can be imported from this file
-__all__ = ['combined_df', 'date_time', 'Error_data_mean', 'Error_data_std', 'facility_df', 'sumo1b_df', 'normalization_stats']
+__all__ = ['combined_df', 'date_time', 'Error_data_mean', 'Error_data_std', 'facility_df', 'sumo1b_df', 
+          'normalization_stats', 'timeseries_dataframe', 'timeseries_normalization_stats']
+
+def normalize_dataframe(df, stats_dict=None):
+    """
+    Normalize a dataframe using mean and standard deviation.
+    If stats_dict is provided, use those statistics, otherwise calculate new ones.
+    
+    Args:
+        df (pd.DataFrame): DataFrame to normalize
+        stats_dict (dict, optional): Dictionary containing mean and std for each column
+    
+    Returns:
+        tuple: (normalized_df, stats_dict)
+    """
+    if stats_dict is None:
+        stats_dict = {}
+        for col in df.columns:
+            stats_dict[col] = {
+                'mean': df[col].mean(),
+                'std': df[col].std()
+            }
+    
+    normalized_df = df.copy()
+    for col in df.columns:
+        mean = stats_dict[col]['mean']
+        std = stats_dict[col]['std']
+        normalized_df[col] = (df[col] - mean) / std
+    
+    return normalized_df, stats_dict
 
 def process_data(data_type='all'):
     """
@@ -23,6 +52,8 @@ def process_data(data_type='all'):
             - Error_data_mean: Mean of error
             - Error_data_std: Standard deviation of error
             - normalization_stats: Dictionary containing mean and std for all columns
+            - timeseries_dataframe: DataFrame containing all facility data
+            - timeseries_normalization_stats: Dictionary containing mean and std for timeseries data
     """
     # Read CSV files
     facility_df = pd.read_csv('src/facility (4).csv')
@@ -56,6 +87,31 @@ def process_data(data_type='all'):
     
     print(f"After resampling - facility_df shape: {facility_df.shape}")
     print(f"After resampling - sumo1b_df shape: {sumo1b_df.shape}")
+
+    # Create timeseries_dataframe with all facility data
+    timeseries_dataframe = facility_df.copy()
+
+    # Print debug information
+    print("\nDebug information for timeseries_dataframe:")
+    print(f"Initial shape: {timeseries_dataframe.shape}")
+    print(f"Number of NaN values: {timeseries_dataframe.isna().sum().sum()}")
+    print(f"Columns with NaN values: {timeseries_dataframe.columns[timeseries_dataframe.isna().any()].tolist()}")
+
+    # Fill NaN values with column means, but only for columns that have numeric data
+    numeric_cols = timeseries_dataframe.select_dtypes(include=[np.number]).columns
+    timeseries_dataframe[numeric_cols] = timeseries_dataframe[numeric_cols].fillna(timeseries_dataframe[numeric_cols].mean())
+
+    # Verify no NaN values remain
+    print("\nVerification after filling NaN values:")
+    print(f"Shape: {timeseries_dataframe.shape}")
+    print(f"Number of NaN values: {timeseries_dataframe.isna().sum().sum()}")
+    print(f"Columns with NaN values: {timeseries_dataframe.columns[timeseries_dataframe.isna().any()].tolist()}")
+    
+    if timeseries_dataframe.isna().any().any():
+        raise ValueError("timeseries_dataframe still contains NaN values after filling")
+
+    # Normalize timeseries_dataframe
+    timeseries_dataframe, timeseries_normalization_stats = normalize_dataframe(timeseries_dataframe)
 
     # Rename columns to indicate source
     facility_df.columns = [f'facility_{col}' for col in facility_df.columns]
@@ -95,7 +151,7 @@ def process_data(data_type='all'):
     
     print(f"After combining - combined_df shape: {combined_df.shape}")
     print(f"Number of NaN in combined_df: {combined_df.isna().sum().sum()}")
-    
+
     # Drop any rows that have NaN in any column
     combined_df = combined_df.dropna()
     
@@ -105,6 +161,9 @@ def process_data(data_type='all'):
     # Calculate error statistics
     Error_data_mean = combined_df['Error'].mean()
     Error_data_std = combined_df['Error'].std()
+
+    # Normalize combined_df
+    combined_df, normalization_stats = normalize_dataframe(combined_df)
 
     # Prepare date_time
     combined_df = combined_df.reset_index()
@@ -123,9 +182,9 @@ def process_data(data_type='all'):
     elif data_type == 'raw':
         pass  # Return data as is
 
-    return combined_df, date_time, Error_data_mean, Error_data_std, {}
+    return combined_df, date_time, Error_data_mean, Error_data_std, normalization_stats, timeseries_dataframe, timeseries_normalization_stats
 
-def save_processed_data(combined_df, date_time, Error_data_mean, Error_data_std, normalization_stats):
+def save_processed_data(combined_df, date_time, Error_data_mean, Error_data_std, normalization_stats, timeseries_dataframe, timeseries_normalization_stats):
     """Save processed data to output directory"""
     output_dir = 'output'
     os.makedirs(output_dir, exist_ok=True)
@@ -133,6 +192,7 @@ def save_processed_data(combined_df, date_time, Error_data_mean, Error_data_std,
     # Save processed data
     combined_df.to_csv(os.path.join(output_dir, 'processed_data.csv'), index=False)
     date_time.to_csv(os.path.join(output_dir, 'date_time.csv'), index=False)
+    timeseries_dataframe.to_csv(os.path.join(output_dir, 'timeseries_data.csv'), index=False)
 
     # Save statistics
     stats_data = []
@@ -153,9 +213,21 @@ def save_processed_data(combined_df, date_time, Error_data_mean, Error_data_std,
     stats_df = pd.DataFrame(stats_data)
     stats_df.to_csv(os.path.join(output_dir, 'normalization_statistics.csv'), index=False)
 
+    # Save timeseries normalization statistics
+    timeseries_stats_data = []
+    for col, stats in timeseries_normalization_stats.items():
+        timeseries_stats_data.append({
+            'column': col,
+            'mean': stats['mean'],
+            'std': stats['std']
+        })
+    
+    timeseries_stats_df = pd.DataFrame(timeseries_stats_data)
+    timeseries_stats_df.to_csv(os.path.join(output_dir, 'timeseries_normalization_statistics.csv'), index=False)
+
     print(f"Data saved to {output_dir}/")
 
 if __name__ == "__main__":
     # Example usage
-    combined_df, date_time, Error_data_mean, Error_data_std, normalization_stats = process_data()
-    save_processed_data(combined_df, date_time, Error_data_mean, Error_data_std, normalization_stats)
+    combined_df, date_time, Error_data_mean, Error_data_std, normalization_stats, timeseries_dataframe, timeseries_normalization_stats = process_data()
+    save_processed_data(combined_df, date_time, Error_data_mean, Error_data_std, normalization_stats, timeseries_dataframe, timeseries_normalization_stats)
