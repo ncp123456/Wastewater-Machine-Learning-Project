@@ -1,0 +1,1 @@
+This project utilizes various machine learning techniques to analyze and predict wastewater and health treatment outcomes. The goal is to enhance the efficiency and effectiveness of management processes through data-driven insights.
